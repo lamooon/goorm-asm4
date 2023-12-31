@@ -93,11 +93,9 @@ resource "aws_nat_gateway" "nat_gateway" {
 
 resource "aws_security_group" "asm4_sg" {
   name        = "asm4_sg"
-  description = "Allow SSH and HTTP inbound traffic"
   vpc_id      = aws_vpc.groomVPC.id
 
   ingress {
-    description      = ""
     from_port        = 22
     to_port          = 22
     protocol         = "tcp"
@@ -106,7 +104,6 @@ resource "aws_security_group" "asm4_sg" {
   }
 
   ingress {
-    description      = ""
     from_port        = 80
     to_port          = 80
     protocol         = "tcp"
@@ -115,7 +112,6 @@ resource "aws_security_group" "asm4_sg" {
   }
 
   ingress {
-    description      = "SSH from VPC"
     from_port        = 8080
     to_port          = 8080
     protocol         = "tcp"
@@ -136,22 +132,7 @@ resource "aws_security_group" "asm4_sg" {
   }
 }
 
-resource "aws_security_group" "rds-sg" {
 
-  name = "rds-sg"
-  vpc_id = aws_vpc.groomVPC.id
-
-  ingress {
-    from_port = 3306
-    to_port = 3306
-    protocol = "tcp"
-    security_groups = [aws_security_group.asm4_sg.id]
-  }
-
-  tags = {
-    Name = "rds-sg"
-  }
-}
 
 # load balancing
 resource "aws_lb" "web_lb" {
@@ -165,11 +146,11 @@ resource "aws_lb" "web_lb" {
 }
 
 # Target group that lb can listen to
-resource "aws_lb_target_group" "web_lb" {
+resource "aws_lb_target_group" "web_lb_tg" {
 
   name = "web-lb-tg"
   target_type = "instance"
-  port = "80"
+  port = "8080"
   protocol = "HTTP"
   vpc_id = aws_vpc.groomVPC.id
 
@@ -184,7 +165,7 @@ resource "aws_lb_listener" "web_lb_listener" {
 
   default_action {
     type = "forward"
-    target_group_arn = aws_lb_target_group.web_lb.arn
+    target_group_arn = aws_lb_target_group.web_lb_tg.arn
   }
 }
 
@@ -301,7 +282,7 @@ resource "aws_autoscaling_group" "web_asg" {
   min_size = 2
   max_size = 2
   desired_capacity = 2
-  target_group_arns = [ aws_lb_target_group.web_lb.arn ]
+  target_group_arns = [ aws_lb_target_group.web_lb_tg.arn ]
   vpc_zone_identifier = [ aws_subnet.asm4_public_subnets[0].id, aws_subnet.asm4_public_subnets[1].id ]
 
   launch_template {
@@ -385,13 +366,32 @@ resource "aws_route" "db_private_route_table" {
   nat_gateway_id = aws_nat_gateway.nat_gateway.id
 }
 
+# RDS - 아래에 있는 주석 풀면 rds 정상적으로 구축됩니다.
+
+resource "aws_security_group" "rds-sg" {
+
+  name = "rds-sg"
+  vpc_id = aws_vpc.groomVPC.id
+
+  ingress {
+    from_port = 3306
+    to_port = 3306
+    protocol = "tcp"
+    security_groups = [aws_security_group.asm4_sg.id]
+  }
+
+  tags = {
+    Name = "rds-sg"
+  }
+}
+
 resource "aws_route_table_association" "rds_rta" {
 
   subnet_id = aws_subnet.asm4_db_private_subnets[0].id
   route_table_id = aws_route_table.app_private_route_table.id
 }
 
-# RDS
+
 resource "aws_db_subnet_group" "rds_subnet_group" {
 
   name = "rds-subnet-group"
@@ -428,8 +428,6 @@ resource "aws_db_instance" "rds_instance_rw" {
   backup_retention_period = 1
   backup_window = "03:00-04:00"
 }
-
-# Replica - read only
 
 resource "aws_db_instance" "rds_instance_ro" {
 
